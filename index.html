@@ -1,0 +1,1467 @@
+<!DOCTYPE html>
+<html lang="ko" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>클래스뷰 (ClassView) - 초등 교실 실시간 화면 공유</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & Noto Sans KR -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Noto Sans KR"', 'Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        slate: {
+                            850: '#151e2e',
+                            950: '#0a0f1c',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            overflow-x: hidden;
+        }
+        /* 커스텀 스크롤바 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+        /* 비디오 컨테이너 비율 유지 */
+        .video-aspect {
+            aspect-ratio: 16 / 9;
+        }
+        /* 부드러운 펄스 애니메이션 */
+        @keyframes livePulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.15); }
+        }
+        .animate-live {
+            animation: livePulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col bg-slate-950 text-slate-100 selection:bg-indigo-500 selection:text-white">
+
+    <!-- 토스트 알림 컨테이너 -->
+    <div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none max-w-sm w-full px-4 sm:px-0"></div>
+
+    <!-- 권한/보안 정책 안내 배너 (화면 공유 차단 시 표시) -->
+    <div id="permission-banner" class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-2xl bg-amber-950/95 border border-amber-500/60 text-amber-100 rounded-2xl p-4 shadow-2xl backdrop-blur-md">
+        <div class="flex items-start gap-3">
+            <div class="p-2 bg-amber-500/20 rounded-xl shrink-0 mt-0.5">
+                <svg class="w-6 h-6 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                </svg>
+            </div>
+            <div class="flex-1 text-sm">
+                <h4 class="font-bold text-amber-300 text-base mb-1" id="banner-title">화면 공유 권한이 차단되었습니다</h4>
+                <p class="text-amber-100/90 leading-relaxed mb-2" id="banner-desc">
+                    브라우저에서 화면 공유를 취소했거나, 현재 미리보기 창(iframe)의 보안 정책(display-capture)으로 인해 화면 캡처가 제한되어 있습니다.
+                </p>
+                <ul class="list-disc list-inside text-xs text-amber-200/80 space-y-1">
+                    <li>실제 교실에서 사용하실 때는 이 HTML 파일을 <strong>새 브라우저 탭</strong>이나 <strong>HTTPS 웹 호스팅(Firebase Hosting, GitHub Pages 등)</strong>에 올려서 열어주세요.</li>
+                    <li>교사 모드에서는 상단의 <strong>'데모 화면 테스트'</strong> 버튼으로 학생 7명 모니터링 화면을 바로 체험해 보실 수 있습니다.</li>
+                </ul>
+            </div>
+            <button onclick="hidePermissionBanner()" class="p-1.5 text-amber-300 hover:bg-amber-800/50 rounded-lg transition">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- 1. 시작 화면 (역할 선택) -->
+    <!-- ========================================================= -->
+    <section id="view-landing" class="flex-1 flex flex-col items-center justify-center p-4 sm:p-6">
+        <div class="w-full max-w-4xl mx-auto">
+            <!-- 로고 & 타이틀 -->
+            <div class="text-center mb-8 sm:mb-10">
+                <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-cyan-500 shadow-lg shadow-indigo-500/25 mb-4">
+                    <svg class="w-9 h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                    </svg>
+                </div>
+                <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight text-white mb-2">
+                    클래스뷰 <span class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400">ClassView</span>
+                </h1>
+                <p class="text-slate-400 text-sm sm:text-base max-w-xl mx-auto">
+                    우리 반 크롬북 화면을 한눈에 보고, 선생님 화면도 실시간으로 공유하는 초등 교실 양방향 화면 공유 플랫폼
+                </p>
+                <!-- 서버 연결 상태 배지 -->
+                <div class="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-xs text-slate-400">
+                    <span id="auth-status-dot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                    <span id="auth-status-text">실시간 교실 서버 연결 중...</span>
+                </div>
+            </div>
+
+            <!-- 역할 선택 카드 그리드 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- 교사 모드 카드 -->
+                <div class="bg-slate-900/90 border border-slate-800 hover:border-indigo-500/50 rounded-3xl p-6 sm:p-8 shadow-xl transition-all duration-300 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-12 h-12 rounded-2xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <h2 class="text-xl font-bold text-white">교사 모드</h2>
+                                <p class="text-xs text-indigo-300">화면 모니터링 &amp; 교사 화면 방송</p>
+                            </div>
+                        </div>
+                        <p class="text-sm text-slate-400 mb-6 leading-relaxed">
+                            교실 방을 개설하고 학생 7명의 크롬북 화면을 실시간 그리드로 확인하세요. 선생님 화면을 모든 학생에게 방송할 수도 있습니다.
+                        </p>
+
+                        <!-- 방 코드 입력/생성 -->
+                        <div class="mb-5">
+                            <label class="block text-xs font-semibold text-slate-400 mb-2">교실 방 코드 (4자리 숫자)</label>
+                            <div class="flex gap-2">
+                                <input type="text" id="teacher-room-input" maxlength="4" placeholder="예: 1234"
+                                    class="flex-1 bg-slate-950 border border-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 rounded-xl px-4 py-3 text-center text-xl font-bold tracking-[0.3em] text-white outline-none transition">
+                                <button type="button" onclick="generateRandomRoomCode()" title="새 코드 생성"
+                                    class="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl font-medium text-sm transition flex items-center gap-1.5 shrink-0">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                                    자동생성
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button id="btn-start-teacher" onclick="enterTeacherMode()"
+                        class="w-full py-3.5 px-6 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-bold text-base shadow-lg shadow-indigo-600/25 transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+                        <span>교실 방 개설하기</span>
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+                    </button>
+                </div>
+
+                <!-- 학생 모드 카드 -->
+                <div class="bg-slate-900/90 border border-slate-800 hover:border-emerald-500/50 rounded-3xl p-6 sm:p-8 shadow-xl transition-all duration-300 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l9-5-9-5-9 5 9 5z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <h2 class="text-xl font-bold text-white">학생 모드</h2>
+                                <p class="text-xs text-emerald-300">크롬북 참여 &amp; 화면 보기</p>
+                            </div>
+                        </div>
+                        <p class="text-sm text-slate-400 mb-6 leading-relaxed">
+                            선생님이 알려주신 4자리 방 코드와 내 이름을 입력해 교실에 입장하세요. 선생님 화면을 크게 보고 내 화면도 공유할 수 있어요.
+                        </p>
+
+                        <!-- 방 코드 & 이름 입력 -->
+                        <div class="space-y-4 mb-5">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-400 mb-1.5">선생님 방 코드 (4자리)</label>
+                                <input type="text" id="student-room-input" maxlength="4" placeholder="예: 1234"
+                                    class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-4 py-3 text-center text-xl font-bold tracking-[0.3em] text-white outline-none transition">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-400 mb-1.5">내 이름 또는 번호</label>
+                                <input type="text" id="student-name-input" maxlength="12" placeholder="예: 1번 김민준"
+                                    class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-4 py-3 text-base font-medium text-white outline-none transition">
+                            </div>
+                        </div>
+                    </div>
+
+                    <button id="btn-start-student" onclick="enterStudentMode()"
+                        class="w-full py-3.5 px-6 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-base shadow-lg shadow-emerald-600/25 transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+                        <span>교실 입장하기</span>
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========================================================= -->
+    <!-- 2. 교사 모드 대시보드 -->
+    <!-- ========================================================= -->
+    <section id="view-teacher" class="hidden flex-1 flex flex-col h-screen overflow-hidden">
+        <!-- 상단 툴바 -->
+        <header class="bg-slate-900/95 border-b border-slate-800 px-4 py-3 flex flex-wrap items-center justify-between gap-3 shrink-0 z-20">
+            <!-- 좌측: 로고 & 방 코드 & 접속 인원 -->
+            <div class="flex flex-wrap items-center gap-3">
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center">
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                    </div>
+                    <span class="font-bold text-white hidden sm:inline">클래스뷰 교사</span>
+                </div>
+
+                <!-- 방 코드 복사 버튼 -->
+                <button onclick="copyRoomCode()" title="클릭하여 방 코드 복사"
+                    class="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl px-3 py-1.5 transition group">
+                    <span class="text-xs text-slate-400">방 코드</span>
+                    <span id="teacher-room-badge" class="text-base font-extrabold tracking-widest text-indigo-400">----</span>
+                    <svg class="w-4 h-4 text-slate-400 group-hover:text-white transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                </button>
+
+                <!-- 접속 학생 수 -->
+                <div class="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    <span class="text-xs text-slate-400">접속 학생</span>
+                    <span id="teacher-student-count" class="text-sm font-bold text-white">0 / 7명</span>
+                </div>
+            </div>
+
+            <!-- 우측: 컨트롤 버튼들 -->
+            <div class="flex flex-wrap items-center gap-2">
+                <!-- 그리드 레이아웃 전환 -->
+                <div class="hidden md:flex items-center bg-slate-950 border border-slate-800 rounded-xl p-1">
+                    <button onclick="setGridLayout('auto')" id="layout-btn-auto" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-600 text-white transition">자동</button>
+                    <button onclick="setGridLayout('4x2')" id="layout-btn-4x2" class="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition">4×2</button>
+                    <button onclick="setGridLayout('3x3')" id="layout-btn-3x3" class="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition">3×3</button>
+                </div>
+
+                <!-- 데모 화면 테스트 버튼 -->
+                <button id="btn-demo-mode" onclick="toggleDemoMode()"
+                    class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs sm:text-sm font-semibold transition flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <span id="demo-btn-text">데모 화면 테스트</span>
+                </button>
+
+                <!-- 교사 화면 방송 버튼 -->
+                <button id="btn-teacher-broadcast" onclick="toggleTeacherBroadcast()"
+                    class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-indigo-600/20 transition flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                    <span id="broadcast-btn-text">내 화면 학생에게 공유</span>
+                </button>
+
+                <!-- 나가기 버튼 -->
+                <button onclick="leaveRoom()" title="교실 닫기"
+                    class="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- 메인 학생 화면 그리드 영역 -->
+        <main class="flex-1 overflow-y-auto p-4 sm:p-5 bg-slate-950 relative">
+            <!-- 빈 상태 안내 (학생 0명 & 데모 꺼짐) -->
+            <div id="teacher-empty-state" class="h-full flex flex-col items-center justify-center text-center p-6">
+                <div class="w-20 h-20 rounded-3xl bg-slate-900 border border-slate-800 flex items-center justify-center mb-4 text-slate-600">
+                    <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                </div>
+                <h3 class="text-xl font-bold text-white mb-2">학생들의 입장을 기다리고 있어요</h3>
+                <p class="text-slate-400 text-sm max-w-md mb-6 leading-relaxed">
+                    학생들에게 크롬북에서 방 코드 <strong id="empty-room-code" class="text-indigo-400 text-base tracking-wider">----</strong> 을(를) 입력해 입장하도록 안내해 주세요.
+                </p>
+                <button onclick="toggleDemoMode()"
+                    class="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 text-sm font-semibold transition flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    학생 7명 데모 화면으로 미리 체험하기
+                </button>
+            </div>
+
+            <!-- 학생 카드 그리드 -->
+            <div id="student-grid" class="hidden grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                <!-- 동적으로 학생 카드 렌더링 -->
+            </div>
+
+            <!-- 교사 본인 방송 PIP 미리보기 (우측 하단) -->
+            <div id="teacher-pip-container" class="hidden fixed bottom-5 right-5 z-30 w-64 sm:w-72 bg-slate-900 border-2 border-indigo-500 rounded-2xl shadow-2xl overflow-hidden">
+                <div class="bg-indigo-600 px-3 py-1.5 flex items-center justify-between">
+                    <div class="flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-white animate-live"></span>
+                        <span class="text-xs font-bold text-white">내 화면 방송 중</span>
+                    </div>
+                    <button onclick="toggleTeacherBroadcast()" class="text-[11px] bg-indigo-800 hover:bg-rose-600 text-white px-2 py-0.5 rounded-md font-semibold transition">중지</button>
+                </div>
+                <div class="relative bg-black video-aspect">
+                    <video id="teacher-local-video" autoplay muted playsinline class="w-full h-full object-contain"></video>
+                </div>
+            </div>
+        </main>
+    </section>
+
+    <!-- ========================================================= -->
+    <!-- 3. 학생 모드 (크롬북 최적화) -->
+    <!-- ========================================================= -->
+    <section id="view-student" class="hidden flex-1 flex flex-col h-screen overflow-hidden">
+        <!-- 상단 툴바 -->
+        <header class="bg-slate-900/95 border-b border-slate-800 px-4 py-3 flex flex-wrap items-center justify-between gap-3 shrink-0 z-20">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-md">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l9-5-9-5-9 5 9 5z"/></svg>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span id="student-header-name" class="font-bold text-white text-base">학생</span>
+                        <span class="text-xs px-2 py-0.5 rounded-md bg-slate-800 text-emerald-400 font-bold">방 <span id="student-room-badge">----</span></span>
+                    </div>
+                    <div class="flex items-center gap-1.5 mt-0.5">
+                        <span id="student-conn-dot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                        <span id="student-conn-text" class="text-xs text-slate-400">교실에 연결됨</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 크고 직관적인 화면 공유 버튼 -->
+            <div class="flex items-center gap-2 sm:gap-3">
+                <button id="btn-student-share" onclick="toggleStudentShare()"
+                    class="px-5 py-2.5 sm:py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm sm:text-base shadow-lg shadow-emerald-600/25 transition-all active:scale-95 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                    <span id="student-share-btn-text">내 화면 공유하기</span>
+                </button>
+
+                <button onclick="leaveRoom()" title="교실 나가기"
+                    class="p-2.5 sm:p-3 rounded-2xl bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-400 border border-slate-700 transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- 메인 영역: 선생님 화면 보기 -->
+        <main class="flex-1 bg-slate-950 p-4 flex flex-col items-center justify-center relative overflow-hidden">
+            <!-- 선생님 방송 대기 화면 -->
+            <div id="student-waiting-teacher" class="text-center max-w-md p-6">
+                <div class="w-24 h-24 mx-auto rounded-3xl bg-slate-900 border border-slate-800 flex items-center justify-center mb-5 text-indigo-400">
+                    <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                </div>
+                <h2 class="text-2xl font-bold text-white mb-2">선생님 화면을 기다리고 있어요</h2>
+                <p class="text-slate-400 text-sm sm:text-base leading-relaxed">
+                    선생님이 화면을 공유하면 이곳에 자동으로 크게 나타납니다.<br>
+                    오른쪽 위 <strong class="text-emerald-400">'내 화면 공유하기'</strong> 버튼을 눌러 내 크롬북 화면을 선생님께 보여줄 수 있어요!
+                </p>
+            </div>
+
+            <!-- 선생님 실시간 방송 비디오 컨테이너 -->
+            <div id="student-teacher-screen-box" class="hidden w-full h-full max-w-6xl flex flex-col bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
+                <div class="bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex items-center justify-between shrink-0">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-live"></span>
+                        <span class="font-bold text-white text-sm sm:text-base">선생님 화면 방송 중</span>
+                    </div>
+                    <button onclick="requestFullscreen('student-remote-teacher-video')"
+                        class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+                        전체화면
+                    </button>
+                </div>
+                <div class="flex-1 bg-black relative flex items-center justify-center overflow-hidden">
+                    <video id="student-remote-teacher-video" autoplay playsinline class="w-full h-full object-contain"></video>
+                </div>
+            </div>
+
+            <!-- 학생 본인 공유 화면 PIP 미리보기 (우측 하단) -->
+            <div id="student-pip-container" class="hidden fixed bottom-5 right-5 z-30 w-56 sm:w-64 bg-slate-900 border-2 border-emerald-500 rounded-2xl shadow-2xl overflow-hidden">
+                <div class="bg-emerald-600 px-3 py-1.5 flex items-center justify-between">
+                    <div class="flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-white animate-live"></span>
+                        <span class="text-xs font-bold text-white">내 화면 공유 중</span>
+                    </div>
+                    <button onclick="toggleStudentShare()" class="text-[11px] bg-emerald-800 hover:bg-rose-600 text-white px-2 py-0.5 rounded-md font-semibold transition">중지</button>
+                </div>
+                <div class="relative bg-black video-aspect">
+                    <video id="student-local-video" autoplay muted playsinline class="w-full h-full object-contain"></video>
+                </div>
+            </div>
+        </main>
+    </section>
+
+    <!-- ========================================================= -->
+    <!-- 4. 교사 모드 - 학생 화면 확대 보기(포커스) 모달 -->
+    <!-- ========================================================= -->
+    <div id="focus-modal" class="hidden fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6">
+        <div class="w-full max-w-6xl bg-slate-900 border border-slate-700 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
+            <div class="px-5 py-3.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <span class="w-3 h-3 rounded-full bg-emerald-400 animate-live"></span>
+                    <h3 id="focus-modal-title" class="text-lg font-bold text-white">학생 이름</h3>
+                    <span id="focus-modal-badge" class="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold">공유 중</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="requestFullscreen('focus-modal-video')"
+                        class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+                        전체화면
+                    </button>
+                    <button onclick="closeFocusModal()"
+                        class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="flex-1 bg-black relative flex items-center justify-center overflow-hidden min-h-[300px]">
+                <video id="focus-modal-video" autoplay playsinline class="w-full h-full max-h-[78vh] object-contain"></video>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- Firebase & WebRTC 애플리케이션 스크립트 -->
+    <!-- ========================================================= -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ---------------------------------------------------------
+        // 1. Firebase 초기화 및 인증 (Rule 1, 2, 3 엄격 준수)
+        // ---------------------------------------------------------
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'classview-default-app';
+        let firebaseConfig = null;
+        try {
+            firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        } catch (e) {
+            console.error("Firebase 설정 파싱 오류:", e);
+        }
+
+        let app, auth, db;
+        let currentUser = null;
+        let isFirebaseReady = false;
+
+        async function initFirebase() {
+            const dot = document.getElementById('auth-status-dot');
+            const text = document.getElementById('auth-status-text');
+
+            if (!firebaseConfig) {
+                dot.className = "w-2 h-2 rounded-full bg-amber-400";
+                text.textContent = "오프라인 데모 모드 (Firebase 설정 없음)";
+                return;
+            }
+
+            try {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                // RULE 3: Custom Token 우선 인증 후 익명 로그인 폴백
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                currentUser = auth.currentUser;
+                isFirebaseReady = true;
+                dot.className = "w-2 h-2 rounded-full bg-emerald-400";
+                text.textContent = "실시간 교실 서버 연결 완료";
+            } catch (error) {
+                console.error("Firebase 초기화/인증 오류:", error);
+                dot.className = "w-2 h-2 rounded-full bg-rose-500";
+                text.textContent = "서버 연결 지연 (데모 모드는 사용 가능)";
+            }
+        }
+
+        // Firestore 경로 헬퍼 (RULE 1: /artifacts/{appId}/public/data/{collectionName})
+        const getPublicCol = (colName) => collection(db, 'artifacts', appId, 'public', 'data', colName);
+        const getPublicDoc = (colName, docId) => doc(db, 'artifacts', appId, 'public', 'data', colName, docId);
+
+        // ---------------------------------------------------------
+        // 2. 전역 상태 관리
+        // ---------------------------------------------------------
+        const RTC_CONFIG = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
+
+        const state = {
+            role: null, // 'teacher' | 'student'
+            roomCode: '',
+            userId: '',
+            studentName: '',
+            teacherId: '',
+
+            // 스트림
+            localStream: null, // 교사 방송 스트림 또는 학생 공유 스트림
+            remoteTeacherStream: null, // 학생이 보는 교사 스트림
+
+            // 교사 모드 데이터
+            students: new Map(), // studentId -> { id, name, isSharing, stream, isDemo }
+            gridLayout: 'auto', // 'auto' | '4x2' | '3x3'
+            isDemoMode: false,
+            demoIntervals: [],
+
+            // WebRTC PeerConnections (방향별 완전 분리)
+            // 교사: studentToTeacherPCs (Map<studentId, RTCPeerConnection>)
+            // 교사: teacherToStudentPCs (Map<studentId, RTCPeerConnection>)
+            // 학생: s2tPC (RTCPeerConnection), t2sPC (RTCPeerConnection)
+            studentToTeacherPCs: new Map(),
+            teacherToStudentPCs: new Map(),
+            s2tPC: null,
+            t2sPC: null,
+
+            // ICE Candidate 큐 (remoteDescription 설정 전 도착한 후보 저장)
+            iceQueues: new Map(), // key -> Array<RTCIceCandidateInit>
+
+            // Firestore 구독 해제 함수들
+            unsubscribers: [],
+            processedSignals: new Set()
+        };
+
+        // ---------------------------------------------------------
+        // 3. UI 유틸리티 (토스트, 배너, 클립보드, 전체화면)
+        // ---------------------------------------------------------
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const colors = {
+                info: 'bg-slate-800 border-slate-700 text-slate-100',
+                success: 'bg-emerald-950/95 border-emerald-500/50 text-emerald-200',
+                error: 'bg-rose-950/95 border-rose-500/50 text-rose-200',
+                warning: 'bg-amber-950/95 border-amber-500/50 text-amber-200'
+            };
+            const el = document.createElement('div');
+            el.className = `pointer-events-auto px-4 py-3 rounded-xl border shadow-xl text-sm font-medium backdrop-blur-md transition-all duration-300 translate-y-[-10px] opacity-0 ${colors[type] || colors.info}`;
+            el.textContent = message;
+            container.appendChild(el);
+
+            requestAnimationFrame(() => {
+                el.classList.remove('translate-y-[-10px]', 'opacity-0');
+            });
+
+            setTimeout(() => {
+                el.classList.add('opacity-0', 'translate-y-[-10px]');
+                setTimeout(() => el.remove(), 300);
+            }, 3500);
+        }
+
+        window.hidePermissionBanner = function() {
+            document.getElementById('permission-banner').classList.add('hidden');
+        };
+
+        function showPermissionBanner(error) {
+            const banner = document.getElementById('permission-banner');
+            const desc = document.getElementById('banner-desc');
+            if (error && error.name === 'NotAllowedError') {
+                desc.textContent = "화면 공유 권한이 거부되었거나, 현재 실행 중인 미리보기 창(iframe)의 보안 정책(display-capture)으로 인해 화면 캡처가 차단되었습니다.";
+            } else {
+                desc.textContent = `화면 공유를 시작할 수 없습니다 (${error?.message || '브라우저 미지원'}). 새 브라우저 탭이나 HTTPS 환경에서 열어주세요.`;
+            }
+            banner.classList.remove('hidden');
+        }
+
+        window.generateRandomRoomCode = function() {
+            const code = Math.floor(1000 + Math.random() * 9000).toString();
+            document.getElementById('teacher-room-input').value = code;
+        };
+
+        window.copyRoomCode = function() {
+            if (!state.roomCode) return;
+            const textarea = document.createElement('textarea');
+            textarea.value = state.roomCode;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                showToast(`방 코드 [${state.roomCode}]가 복사되었습니다!`, 'success');
+            } catch (err) {
+                showToast('복사에 실패했습니다. 코드를 직접 확인해 주세요.', 'error');
+            }
+            document.body.removeChild(textarea);
+        };
+
+        window.requestFullscreen = function(videoId) {
+            const video = document.getElementById(videoId);
+            if (!video) return;
+            if (video.requestFullscreen) {
+                video.requestFullscreen().catch(() => {});
+            } else if (video.webkitRequestFullscreen) {
+                video.webkitRequestFullscreen();
+            }
+        };
+
+        function switchView(viewId) {
+            ['view-landing', 'view-teacher', 'view-student'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+            document.getElementById(viewId).classList.remove('hidden');
+        }
+
+        // ---------------------------------------------------------
+        // 4. 시그널링 전송 헬퍼
+        // ---------------------------------------------------------
+        async function sendSignal(toId, direction, type, payloadObj = {}) {
+            if (!isFirebaseReady || !currentUser || !state.roomCode) return;
+            try {
+                await addDoc(getPublicCol('classview_signals'), {
+                    roomCode: state.roomCode,
+                    fromId: state.userId,
+                    toId: toId,
+                    direction: direction, // 'student-to-teacher' | 'teacher-to-student'
+                    type: type, // 'offer' | 'answer' | 'ice' | 'stop-share'
+                    payload: JSON.stringify(payloadObj),
+                    createdAt: Date.now()
+                });
+            } catch (e) {
+                console.error("시그널 전송 오류:", e);
+            }
+        }
+
+        function queueOrAddIce(pc, queueKey, candidateInit) {
+            if (!pc || !candidateInit) return;
+            if (pc.remoteDescription && pc.remoteDescription.type) {
+                pc.addIceCandidate(new RTCIceCandidate(candidateInit)).catch(e => console.warn("ICE 추가 무시:", e));
+            } else {
+                if (!state.iceQueues.has(queueKey)) state.iceQueues.set(queueKey, []);
+                state.iceQueues.get(queueKey).push(candidateInit);
+            }
+        }
+
+        async function flushIceQueue(pc, queueKey) {
+            const queue = state.iceQueues.get(queueKey);
+            if (!queue || !pc) return;
+            while (queue.length > 0) {
+                const cand = queue.shift();
+                try {
+                    await pc.addIceCandidate(new RTCIceCandidate(cand));
+                } catch (e) {
+                    console.warn("큐 ICE 추가 오류:", e);
+                }
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 5. 교사 모드 진입 및 로직
+        // ---------------------------------------------------------
+        window.enterTeacherMode = async function() {
+            const input = document.getElementById('teacher-room-input');
+            let code = input.value.trim();
+            if (!/^\d{4}$/.test(code)) {
+                code = Math.floor(1000 + Math.random() * 9000).toString();
+                input.value = code;
+            }
+
+            state.role = 'teacher';
+            state.roomCode = code;
+            state.userId = currentUser ? currentUser.uid : 'teacher-' + crypto.randomUUID();
+            state.teacherId = state.userId;
+
+            document.getElementById('teacher-room-badge').textContent = code;
+            document.getElementById('empty-room-code').textContent = code;
+
+            switchView('view-teacher');
+            showToast(`교실 방 [${code}]이 개설되었습니다.`, 'success');
+
+            if (isFirebaseReady && currentUser) {
+                try {
+                    await setDoc(getPublicDoc('classview_rooms', code), {
+                        roomCode: code,
+                        teacherId: state.userId,
+                        teacherBroadcasting: false,
+                        createdAt: Date.now(),
+                        updatedAt: Date.now()
+                    });
+                    subscribeTeacherFirestore();
+                } catch (e) {
+                    console.error("방 생성 오류:", e);
+                    showToast("방 정보 저장 중 오류가 발생했습니다.", "error");
+                }
+            }
+        };
+
+        function subscribeTeacherFirestore() {
+            if (!isFirebaseReady || !currentUser) return;
+
+            // 1) 학생 목록 실시간 구독 (RULE 2: 단순 collection 쿼리 후 메모리 필터링)
+            const unsubStudents = onSnapshot(getPublicCol('classview_students'), (snapshot) => {
+                const activeStudentIds = new Set();
+
+                snapshot.forEach((docSnap) => {
+                    const data = docSnap.data();
+                    if (data.roomCode !== state.roomCode) return;
+
+                    activeStudentIds.add(data.studentId);
+                    const existing = state.students.get(data.studentId);
+
+                    if (!existing) {
+                        state.students.set(data.studentId, {
+                            id: data.studentId,
+                            name: data.name || '학생',
+                            isSharing: !!data.isSharing,
+                            stream: null,
+                            isDemo: false
+                        });
+                        showToast(`${data.name} 학생이 입장했습니다.`, 'info');
+
+                        // 교사가 현재 방송 중이라면 새로 들어온 학생에게도 방송 송출
+                        if (state.localStream) {
+                            startTeacherBroadcastToStudent(data.studentId);
+                        }
+                    } else {
+                        existing.name = data.name || existing.name;
+                        existing.isSharing = !!data.isSharing;
+                        if (!data.isSharing && existing.stream) {
+                            existing.stream = null;
+                            closeTeacherS2TPC(data.studentId);
+                        }
+                    }
+                });
+
+                // 퇴장한 실제 학생 제거 (데모 학생은 유지)
+                for (const [sid, st] of state.students.entries()) {
+                    if (!st.isDemo && !activeStudentIds.has(sid)) {
+                        state.students.delete(sid);
+                        closeTeacherS2TPC(sid);
+                        closeTeacherT2SPC(sid);
+                    }
+                }
+
+                renderStudentGrid();
+            }, (err) => {
+                console.error("학생 목록 구독 오류:", err);
+            });
+
+            // 2) 시그널링 구독
+            const unsubSignals = onSnapshot(getPublicCol('classview_signals'), (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    if (change.type !== 'added') return;
+                    const sigId = change.doc.id;
+                    if (state.processedSignals.has(sigId)) return;
+
+                    const sig = change.doc.data();
+                    if (sig.roomCode !== state.roomCode || sig.toId !== state.userId) return;
+
+                    state.processedSignals.add(sigId);
+                    handleTeacherSignal(sig);
+                    // 처리 완료된 시그널 문서 정리
+                    deleteDoc(change.doc.ref).catch(() => {});
+                });
+            }, (err) => {
+                console.error("교사 시그널 구독 오류:", err);
+            });
+
+            state.unsubscribers.push(unsubStudents, unsubSignals);
+        }
+
+        async function handleTeacherSignal(sig) {
+            const payload = JSON.parse(sig.payload || '{}');
+            const studentId = sig.fromId;
+
+            if (sig.direction === 'student-to-teacher') {
+                // 학생이 화면 공유 Offer를 보냄
+                if (sig.type === 'offer') {
+                    closeTeacherS2TPC(studentId);
+                    const pc = new RTCPeerConnection(RTC_CONFIG);
+                    state.studentToTeacherPCs.set(studentId, pc);
+                    const qKey = `s2t_${studentId}`;
+
+                    pc.onicecandidate = (e) => {
+                        if (e.candidate) {
+                            sendSignal(studentId, 'student-to-teacher', 'ice', e.candidate.toJSON());
+                        }
+                    };
+
+                    pc.ontrack = (e) => {
+                        const stream = e.streams[0];
+                        const st = state.students.get(studentId);
+                        if (st && stream) {
+                            st.stream = stream;
+                            st.isSharing = true;
+                            renderStudentGrid();
+                        }
+                    };
+
+                    await pc.setRemoteDescription(new RTCSessionDescription(payload));
+                    await flushIceQueue(pc, qKey);
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    await sendSignal(studentId, 'student-to-teacher', 'answer', answer);
+                } else if (sig.type === 'ice') {
+                    const pc = state.studentToTeacherPCs.get(studentId);
+                    queueOrAddIce(pc, `s2t_${studentId}`, payload);
+                } else if (sig.type === 'stop-share') {
+                    closeTeacherS2TPC(studentId);
+                    const st = state.students.get(studentId);
+                    if (st) {
+                        st.stream = null;
+                        st.isSharing = false;
+                        renderStudentGrid();
+                    }
+                }
+            } else if (sig.direction === 'teacher-to-student') {
+                // 교사 방송에 대한 학생의 Answer / ICE
+                const pc = state.teacherToStudentPCs.get(studentId);
+                if (!pc) return;
+                const qKey = `t2s_${studentId}`;
+
+                if (sig.type === 'answer') {
+                    await pc.setRemoteDescription(new RTCSessionDescription(payload));
+                    await flushIceQueue(pc, qKey);
+                } else if (sig.type === 'ice') {
+                    queueOrAddIce(pc, qKey, payload);
+                }
+            }
+        }
+
+        function closeTeacherS2TPC(studentId) {
+            const pc = state.studentToTeacherPCs.get(studentId);
+            if (pc) {
+                pc.close();
+                state.studentToTeacherPCs.delete(studentId);
+            }
+            state.iceQueues.delete(`s2t_${studentId}`);
+        }
+
+        function closeTeacherT2SPC(studentId) {
+            const pc = state.teacherToStudentPCs.get(studentId);
+            if (pc) {
+                pc.close();
+                state.teacherToStudentPCs.delete(studentId);
+            }
+            state.iceQueues.delete(`t2s_${studentId}`);
+        }
+
+        // 교사 화면 학생들에게 방송 시작/중지
+        window.toggleTeacherBroadcast = async function() {
+            if (state.localStream) {
+                stopTeacherBroadcast();
+                return;
+            }
+
+            try {
+                const stream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { cursor: "always" },
+                    audio: false
+                });
+                state.localStream = stream;
+
+                // 브라우저 자체 '공유 중지' 버튼 감지
+                stream.getVideoTracks()[0].onended = () => {
+                    stopTeacherBroadcast();
+                };
+
+                // PIP 미리보기 표시
+                const pipVideo = document.getElementById('teacher-local-video');
+                pipVideo.srcObject = stream;
+                document.getElementById('teacher-pip-container').classList.remove('hidden');
+
+                // 버튼 UI 변경
+                const btn = document.getElementById('btn-teacher-broadcast');
+                btn.className = "px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-rose-600/20 transition flex items-center gap-2";
+                document.getElementById('broadcast-btn-text').textContent = "방송 중지하기";
+
+                if (isFirebaseReady && currentUser) {
+                    await updateDoc(getPublicDoc('classview_rooms', state.roomCode), {
+                        teacherBroadcasting: true,
+                        updatedAt: Date.now()
+                    }).catch(() => {});
+                }
+
+                // 접속 중인 모든 실제 학생에게 WebRTC Offer 송출
+                for (const [sid, st] of state.students.entries()) {
+                    if (!st.isDemo) {
+                        startTeacherBroadcastToStudent(sid);
+                    }
+                }
+
+                showToast("학생들의 크롬북으로 선생님 화면 방송을 시작했습니다!", "success");
+            } catch (err) {
+                console.error("교사 화면 공유 오류:", err);
+                showPermissionBanner(err);
+            }
+        };
+
+        async function startTeacherBroadcastToStudent(studentId) {
+            if (!state.localStream) return;
+            closeTeacherT2SPC(studentId);
+
+            const pc = new RTCPeerConnection(RTC_CONFIG);
+            state.teacherToStudentPCs.set(studentId, pc);
+
+            state.localStream.getTracks().forEach(track => {
+                pc.addTrack(track, state.localStream);
+            });
+
+            pc.onicecandidate = (e) => {
+                if (e.candidate) {
+                    sendSignal(studentId, 'teacher-to-student', 'ice', e.candidate.toJSON());
+                }
+            };
+
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            await sendSignal(studentId, 'teacher-to-student', 'offer', offer);
+        }
+
+        async function stopTeacherBroadcast() {
+            if (state.localStream) {
+                state.localStream.getTracks().forEach(t => t.stop());
+                state.localStream = null;
+            }
+
+            document.getElementById('teacher-local-video').srcObject = null;
+            document.getElementById('teacher-pip-container').classList.add('hidden');
+
+            const btn = document.getElementById('btn-teacher-broadcast');
+            btn.className = "px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-indigo-600/20 transition flex items-center gap-2";
+            document.getElementById('broadcast-btn-text').textContent = "내 화면 학생에게 공유";
+
+            for (const [sid, pc] of state.teacherToStudentPCs.entries()) {
+                pc.close();
+                sendSignal(sid, 'teacher-to-student', 'stop-share', {});
+            }
+            state.teacherToStudentPCs.clear();
+
+            if (isFirebaseReady && currentUser && state.roomCode) {
+                updateDoc(getPublicDoc('classview_rooms', state.roomCode), {
+                    teacherBroadcasting: false,
+                    updatedAt: Date.now()
+                }).catch(() => {});
+            }
+            showToast("선생님 화면 방송을 종료했습니다.", "info");
+        }
+
+        // ---------------------------------------------------------
+        // 6. 교사 모드 - 그리드 렌더링 & 레이아웃 & 포커스 모달
+        // ---------------------------------------------------------
+        window.setGridLayout = function(layout) {
+            state.gridLayout = layout;
+            const grid = document.getElementById('student-grid');
+
+            ['auto', '4x2', '3x3'].forEach(l => {
+                const btn = document.getElementById(`layout-btn-${l}`);
+                if (btn) {
+                    btn.className = l === layout
+                        ? "px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-600 text-white transition"
+                        : "px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition";
+                }
+            });
+
+            if (layout === '4x2') {
+                grid.className = "grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4";
+            } else if (layout === '3x3') {
+                grid.className = "grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3";
+            } else {
+                grid.className = "grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4";
+            }
+        };
+
+        function renderStudentGrid() {
+            const grid = document.getElementById('student-grid');
+            const emptyState = document.getElementById('teacher-empty-state');
+            const countEl = document.getElementById('teacher-student-count');
+
+            const studentList = Array.from(state.students.values());
+            countEl.textContent = `${studentList.length} / 7명`;
+
+            if (studentList.length === 0) {
+                grid.classList.add('hidden');
+                emptyState.classList.remove('hidden');
+                grid.innerHTML = '';
+                return;
+            }
+
+            emptyState.classList.add('hidden');
+            grid.classList.remove('hidden');
+            setGridLayout(state.gridLayout);
+
+            // 기존 카드 유지 및 업데이트 (비디오 깜빡임 방지)
+            const currentIds = new Set(studentList.map(s => s.id));
+            Array.from(grid.children).forEach(child => {
+                if (!currentIds.has(child.dataset.studentId)) {
+                    child.remove();
+                }
+            });
+
+            studentList.forEach(student => {
+                let card = grid.querySelector(`[data-student-id="${student.id}"]`);
+                if (!card) {
+                    card = document.createElement('div');
+                    card.dataset.studentId = student.id;
+                    card.className = "bg-slate-900 border border-slate-800 hover:border-indigo-500/60 rounded-2xl overflow-hidden shadow-lg transition-all duration-200 flex flex-col group cursor-pointer";
+                    card.onclick = () => openFocusModal(student.id);
+
+                    card.innerHTML = `
+                        <div class="relative bg-slate-950 video-aspect flex items-center justify-center overflow-hidden">
+                            <video autoplay muted playsinline class="w-full h-full object-contain hidden"></video>
+                            <div class="placeholder flex flex-col items-center justify-center text-slate-600 p-4 text-center">
+                                <svg class="w-10 h-10 mb-2 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                                <span class="text-xs font-medium">화면 공유 대기 중</span>
+                            </div>
+                            <!-- 호버 시 확대 아이콘 -->
+                            <div class="absolute inset-0 bg-indigo-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <span class="px-3 py-1.5 rounded-xl bg-slate-900/90 text-white text-xs font-bold shadow-lg flex items-center gap-1.5 border border-slate-700">
+                                    <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"/></svg>
+                                    크게 보기
+                                </span>
+                            </div>
+                        </div>
+                        <div class="px-3.5 py-2.5 bg-slate-900 flex items-center justify-between border-t border-slate-800/80">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <span class="status-dot w-2 h-2 rounded-full bg-slate-500 shrink-0"></span>
+                                <span class="student-name font-bold text-sm text-white truncate"></span>
+                            </div>
+                            <span class="status-badge text-[11px] px-2 py-0.5 rounded-md font-semibold shrink-0">대기 중</span>
+                        </div>
+                    `;
+                    grid.appendChild(card);
+                }
+
+                // 내용 업데이트
+                card.querySelector('.student-name').textContent = student.name;
+                const video = card.querySelector('video');
+                const placeholder = card.querySelector('.placeholder');
+                const dot = card.querySelector('.status-dot');
+                const badge = card.querySelector('.status-badge');
+
+                if (student.stream) {
+                    if (video.srcObject !== student.stream) {
+                        video.srcObject = student.stream;
+                    }
+                    video.classList.remove('hidden');
+                    placeholder.classList.add('hidden');
+                    dot.className = "status-dot w-2 h-2 rounded-full bg-emerald-400 animate-live shrink-0";
+                    badge.className = "status-badge text-[11px] px-2 py-0.5 rounded-md font-semibold bg-emerald-500/15 text-emerald-300 shrink-0";
+                    badge.textContent = student.isDemo ? "데모 공유 중" : "공유 중";
+                } else {
+                    video.srcObject = null;
+                    video.classList.add('hidden');
+                    placeholder.classList.remove('hidden');
+                    dot.className = "status-dot w-2 h-2 rounded-full bg-amber-400 shrink-0";
+                    badge.className = "status-badge text-[11px] px-2 py-0.5 rounded-md font-semibold bg-slate-800 text-slate-400 shrink-0";
+                    badge.textContent = "접속됨";
+                }
+            });
+        }
+
+        function openFocusModal(studentId) {
+            const student = state.students.get(studentId);
+            if (!student || !student.stream) {
+                showToast("현재 공유 중인 화면이 없습니다.", "warning");
+                return;
+            }
+            document.getElementById('focus-modal-title').textContent = student.name;
+            document.getElementById('focus-modal-badge').textContent = student.isDemo ? "데모 화면" : "실시간 공유 중";
+            const modalVideo = document.getElementById('focus-modal-video');
+            modalVideo.srcObject = student.stream;
+            document.getElementById('focus-modal').classList.remove('hidden');
+        }
+
+        window.closeFocusModal = function() {
+            const modalVideo = document.getElementById('focus-modal-video');
+            modalVideo.srcObject = null;
+            document.getElementById('focus-modal').classList.add('hidden');
+        };
+
+        // ---------------------------------------------------------
+        // 7. 교사 모드 - 학생 7명 데모 화면 테스트 (가상 캔버스 스트림)
+        // ---------------------------------------------------------
+        window.toggleDemoMode = function() {
+            if (state.isDemoMode) {
+                stopDemoMode();
+            } else {
+                startDemoMode();
+            }
+        };
+
+        function startDemoMode() {
+            state.isDemoMode = true;
+            document.getElementById('demo-btn-text').textContent = "데모 종료";
+            document.getElementById('btn-demo-mode').classList.add('border-cyan-500', 'bg-cyan-950/40');
+
+            const demoStudents = [
+                { id: 'demo-1', name: '1번 김민준', task: '엔트리 블록 코딩', color: '#4f46e5', accent: '#818cf8' },
+                { id: 'demo-2', name: '2번 이서연', task: '수학 분수 퀴즈 풀이', color: '#059669', accent: '#34d399' },
+                { id: 'demo-3', name: '3번 박도윤', task: '사회 우리 고장 발표자료', color: '#d97706', accent: '#fbbf24' },
+                { id: 'demo-4', name: '4번 최지우', task: '디지털 그림판 그리기', color: '#db2777', accent: '#f472b6' },
+                { id: 'demo-5', name: '5번 정하준', task: '한글 타자 연습 (240타)', color: '#0284c7', accent: '#38bdf8' },
+                { id: 'demo-6', name: '6번 강수아', task: '과학 식물 관찰 일지', color: '#7c3aed', accent: '#a78bfa' },
+                { id: 'demo-7', name: '7번 윤시우', task: '영어 단어 카드 학습', color: '#dc2626', accent: '#f87171' }
+            ];
+
+            demoStudents.forEach((ds, idx) => {
+                const canvas = document.createElement('canvas');
+                canvas.width = 640;
+                canvas.height = 360;
+                const ctx = canvas.getContext('2d');
+
+                let frame = idx * 25;
+                const draw = () => {
+                    frame++;
+                    // 크롬북 배경
+                    ctx.fillStyle = '#1e293b';
+                    ctx.fillRect(0, 0, 640, 360);
+
+                    // 브라우저 상단 탭 바
+                    ctx.fillStyle = '#0f172a';
+                    ctx.fillRect(0, 0, 640, 36);
+                    ctx.fillStyle = ds.color;
+                    ctx.fillRect(16, 8, 180, 28);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 13px sans-serif';
+                    ctx.fillText(ds.task, 28, 26);
+
+                    // 본문 카드
+                    ctx.fillStyle = '#f8fafc';
+                    ctx.fillRect(24, 52, 592, 264);
+
+                    // 활동 헤더
+                    ctx.fillStyle = ds.color;
+                    ctx.fillRect(24, 52, 592, 48);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 20px sans-serif';
+                    ctx.fillText(`${ds.name} - ${ds.task}`, 42, 83);
+
+                    // 움직이는 진행 바 및 그래픽
+                    const progress = ((frame % 200) / 200);
+                    ctx.fillStyle = '#e2e8f0';
+                    ctx.fillRect(48, 130, 544, 24);
+                    ctx.fillStyle = ds.accent;
+                    ctx.fillRect(48, 130, 544 * progress, 24);
+
+                    // 움직이는 도형 (학생 활동 시뮬레이션)
+                    const cx = 120 + Math.sin(frame * 0.05) * 60 + 200;
+                    const cy = 235 + Math.cos(frame * 0.07) * 25;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, 28, 0, Math.PI * 2);
+                    ctx.fillStyle = ds.color;
+                    ctx.fill();
+
+                    ctx.fillStyle = '#334155';
+                    ctx.font = '16px sans-serif';
+                    ctx.fillText(`실시간 학습 진행률: ${Math.round(progress * 100)}%`, 48, 185);
+
+                    // 크롬북 하단 작업표시줄
+                    ctx.fillStyle = '#0f172a';
+                    ctx.fillRect(0, 328, 640, 32);
+                    ctx.fillStyle = '#94a3b8';
+                    ctx.font = '12px sans-serif';
+                    ctx.fillText('Chromebook OS  |  클래스뷰 연결됨', 16, 348);
+                };
+
+                draw();
+                const interval = setInterval(draw, 100);
+                state.demoIntervals.push(interval);
+
+                const stream = canvas.captureStream(15);
+                state.students.set(ds.id, {
+                    id: ds.id,
+                    name: ds.name,
+                    isSharing: true,
+                    stream: stream,
+                    isDemo: true
+                });
+            });
+
+            renderStudentGrid();
+            showToast("학생 7명의 가상 크롬북 데모 화면이 생성되었습니다!", "success");
+        }
+
+        function stopDemoMode() {
+            state.isDemoMode = false;
+            document.getElementById('demo-btn-text').textContent = "데모 화면 테스트";
+            document.getElementById('btn-demo-mode').classList.remove('border-cyan-500', 'bg-cyan-950/40');
+
+            state.demoIntervals.forEach(clearInterval);
+            state.demoIntervals = [];
+
+            for (const [sid, st] of state.students.entries()) {
+                if (st.isDemo) {
+                    if (st.stream) st.stream.getTracks().forEach(t => t.stop());
+                    state.students.delete(sid);
+                }
+            }
+            renderStudentGrid();
+            showToast("데모 화면 테스트를 종료했습니다.", "info");
+        }
+
+        // ---------------------------------------------------------
+        // 8. 학생 모드 진입 및 로직
+        // ---------------------------------------------------------
+        window.enterStudentMode = async function() {
+            const code = document.getElementById('student-room-input').value.trim();
+            const name = document.getElementById('student-name-input').value.trim();
+
+            if (!/^\d{4}$/.test(code)) {
+                showToast("선생님이 알려주신 4자리 숫자 방 코드를 입력해 주세요.", "warning");
+                return;
+            }
+            if (!name) {
+                showToast("내 이름이나 번호를 입력해 주세요.", "warning");
+                return;
+            }
+
+            state.role = 'student';
+            state.roomCode = code;
+            state.studentName = name;
+            state.userId = currentUser ? currentUser.uid : 'student-' + crypto.randomUUID();
+
+            document.getElementById('student-header-name').textContent = name;
+            document.getElementById('student-room-badge').textContent = code;
+
+            switchView('view-student');
+            showToast(`[${code}] 교실에 입장했습니다!`, 'success');
+
+            if (isFirebaseReady && currentUser) {
+                try {
+                    // 방 정보 확인 (교사 ID 가져오기)
+                    const roomSnap = await getDoc(getPublicDoc('classview_rooms', code));
+                    if (roomSnap.exists()) {
+                        state.teacherId = roomSnap.data().teacherId;
+                    }
+
+                    // 학생 입장 등록
+                    await setDoc(getPublicDoc('classview_students', `${code}_${state.userId}`), {
+                        roomCode: code,
+                        studentId: state.userId,
+                        name: name,
+                        isSharing: false,
+                        joinedAt: Date.now()
+                    });
+
+                    subscribeStudentFirestore();
+                } catch (e) {
+                    console.error("학생 입장 오류:", e);
+                    showToast("교실 서버 연결 중 오류가 발생했습니다.", "error");
+                }
+            }
+        };
+
+        function subscribeStudentFirestore() {
+            if (!isFirebaseReady || !currentUser) return;
+
+            // 1) 방 정보 구독 (교사 ID 확보 및 방송 상태 감지)
+            const unsubRoom = onSnapshot(getPublicDoc('classview_rooms', state.roomCode), (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    state.teacherId = data.teacherId;
+                    if (!data.teacherBroadcasting) {
+                        clearTeacherBroadcastView();
+                    }
+                }
+            }, (err) => console.error("방 구독 오류:", err));
+
+            // 2) 시그널링 구독
+            const unsubSignals = onSnapshot(getPublicCol('classview_signals'), (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    if (change.type !== 'added') return;
+                    const sigId = change.doc.id;
+                    if (state.processedSignals.has(sigId)) return;
+
+                    const sig = change.doc.data();
+                    if (sig.roomCode !== state.roomCode || sig.toId !== state.userId) return;
+
+                    state.processedSignals.add(sigId);
+                    handleStudentSignal(sig);
+                    deleteDoc(change.doc.ref).catch(() => {});
+                });
+            }, (err) => console.error("학생 시그널 구독 오류:", err));
+
+            state.unsubscribers.push(unsubRoom, unsubSignals);
+        }
+
+        async function handleStudentSignal(sig) {
+            const payload = JSON.parse(sig.payload || '{}');
+
+            if (sig.direction === 'student-to-teacher') {
+                // 내 화면 공유에 대한 교사의 Answer / ICE
+                if (!state.s2tPC) return;
+                if (sig.type === 'answer') {
+                    await state.s2tPC.setRemoteDescription(new RTCSessionDescription(payload));
+                    await flushIceQueue(state.s2tPC, 's2t_local');
+                } else if (sig.type === 'ice') {
+                    queueOrAddIce(state.s2tPC, 's2t_local', payload);
+                }
+            } else if (sig.direction === 'teacher-to-student') {
+                // 교사 화면 방송 Offer 수신
+                if (sig.type === 'offer') {
+                    if (state.t2sPC) state.t2sPC.close();
+                    const pc = new RTCPeerConnection(RTC_CONFIG);
+                    state.t2sPC = pc;
+
+                    pc.onicecandidate = (e) => {
+                        if (e.candidate) {
+                            sendSignal(sig.fromId, 'teacher-to-student', 'ice', e.candidate.toJSON());
+                        }
+                    };
+
+                    pc.ontrack = (e) => {
+                        const stream = e.streams[0];
+                        if (stream) {
+                            const video = document.getElementById('student-remote-teacher-video');
+                            video.srcObject = stream;
+                            document.getElementById('student-waiting-teacher').classList.add('hidden');
+                            document.getElementById('student-teacher-screen-box').classList.remove('hidden');
+                            showToast("선생님이 화면 공유를 시작했어요!", "info");
+                        }
+                    };
+
+                    await pc.setRemoteDescription(new RTCSessionDescription(payload));
+                    await flushIceQueue(pc, 't2s_local');
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    await sendSignal(sig.fromId, 'teacher-to-student', 'answer', answer);
+                } else if (sig.type === 'ice') {
+                    queueOrAddIce(state.t2sPC, 't2s_local', payload);
+                } else if (sig.type === 'stop-share') {
+                    clearTeacherBroadcastView();
+                }
+            }
+        }
+
+        function clearTeacherBroadcastView() {
+            if (state.t2sPC) {
+                state.t2sPC.close();
+                state.t2sPC = null;
+            }
+            const video = document.getElementById('student-remote-teacher-video');
+            if (video) video.srcObject = null;
+            document.getElementById('student-teacher-screen-box').classList.add('hidden');
+            document.getElementById('student-waiting-teacher').classList.remove('hidden');
+        }
+
+        // 학생 본인 화면 공유 시작/중지
+        window.toggleStudentShare = async function() {
+            if (state.localStream) {
+                stopStudentShare();
+                return;
+            }
+
+            try {
+                const stream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { cursor: "always" },
+                    audio: false
+                });
+                state.localStream = stream;
+
+                stream.getVideoTracks()[0].onended = () => {
+                    stopStudentShare();
+                };
+
+                // PIP 표시
+                document.getElementById('student-local-video').srcObject = stream;
+                document.getElementById('student-pip-container').classList.remove('hidden');
+
+                // 버튼 UI 변경
+                const btn = document.getElementById('btn-student-share');
+                btn.className = "px-5 py-2.5 sm:py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-sm sm:text-base shadow-lg shadow-rose-600/25 transition-all active:scale-95 flex items-center gap-2";
+                document.getElementById('student-share-btn-text').textContent = "화면 공유 중지하기";
+
+                if (isFirebaseReady && currentUser) {
+                    await updateDoc(getPublicDoc('classview_students', `${state.roomCode}_${state.userId}`), {
+                        isSharing: true
+                    }).catch(() => {});
+
+                    if (state.teacherId) {
+                        if (state.s2tPC) state.s2tPC.close();
+                        const pc = new RTCPeerConnection(RTC_CONFIG);
+                        state.s2tPC = pc;
+
+                        stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+                        pc.onicecandidate = (e) => {
+                            if (e.candidate) {
+                                sendSignal(state.teacherId, 'student-to-teacher', 'ice', e.candidate.toJSON());
+                            }
+                        };
+
+                        const offer = await pc.createOffer();
+                        await pc.setLocalDescription(offer);
+                        await sendSignal(state.teacherId, 'student-to-teacher', 'offer', offer);
+                    }
+                }
+
+                showToast("선생님께 내 화면을 공유하고 있어요!", "success");
+            } catch (err) {
+                console.error("학생 화면 공유 오류:", err);
+                showPermissionBanner(err);
+            }
+        };
+
+        async function stopStudentShare() {
+            if (state.localStream) {
+                state.localStream.getTracks().forEach(t => t.stop());
+                state.localStream = null;
+            }
+            if (state.s2tPC) {
+                state.s2tPC.close();
+                state.s2tPC = null;
+            }
+
+            document.getElementById('student-local-video').srcObject = null;
+            document.getElementById('student-pip-container').classList.add('hidden');
+
+            const btn = document.getElementById('btn-student-share');
+            btn.className = "px-5 py-2.5 sm:py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm sm:text-base shadow-lg shadow-emerald-600/25 transition-all active:scale-95 flex items-center gap-2";
+            document.getElementById('student-share-btn-text').textContent = "내 화면 공유하기";
+
+            if (isFirebaseReady && currentUser && state.roomCode) {
+                updateDoc(getPublicDoc('classview_students', `${state.roomCode}_${state.userId}`), {
+                    isSharing: false
+                }).catch(() => {});
+                if (state.teacherId) {
+                    sendSignal(state.teacherId, 'student-to-teacher', 'stop-share', {});
+                }
+            }
+            showToast("화면 공유를 중지했습니다.", "info");
+        }
+
+        // ---------------------------------------------------------
+        // 9. 방 퇴장 및 리소스 정리
+        // ---------------------------------------------------------
+        window.leaveRoom = async function() {
+            if (state.role === 'teacher') {
+                if (state.isDemoMode) stopDemoMode();
+                if (state.localStream) await stopTeacherBroadcast();
+                state.studentToTeacherPCs.forEach(pc => pc.close());
+                state.studentToTeacherPCs.clear();
+                state.students.clear();
+            } else if (state.role === 'student') {
+                if (state.localStream) await stopStudentShare();
+                clearTeacherBroadcastView();
+                if (isFirebaseReady && currentUser && state.roomCode) {
+                    await deleteDoc(getPublicDoc('classview_students', `${state.roomCode}_${state.userId}`)).catch(() => {});
+                }
+            }
+
+            state.unsubscribers.forEach(u => u());
+            state.unsubscribers = [];
+            state.processedSignals.clear();
+            state.iceQueues.clear();
+            state.role = null;
+            state.roomCode = '';
+
+            switchView('view-landing');
+            showToast("교실에서 나왔습니다.", "info");
+        };
+
+        // 창 닫기/새로고침 시 정리
+        window.addEventListener('beforeunload', () => {
+            if (state.role === 'student' && isFirebaseReady && currentUser && state.roomCode) {
+                deleteDoc(getPublicDoc('classview_students', `${state.roomCode}_${state.userId}`)).catch(() => {});
+            }
+        });
+
+        // 초기 실행
+        window.addEventListener('DOMContentLoaded', () => {
+            generateRandomRoomCode();
+            initFirebase();
+        });
+    </script>
+</body>
+</html>
