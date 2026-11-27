@@ -415,7 +415,22 @@
 
         // 구글 공용 STUN 서버 (학교 방화벽 NAT 통과 지원)
         const RTC_CONFIG = {
-            iceServers: [
+            iceServers: [{ urls: "stun:stun.relay.metered.ca:80" },
+  {
+    urls: "turn:global.relay.metered.ca:80",
+    username: "c2a40f503e9a16521441559b",
+    credential: "j7yz3AFjfTXKEBHm"
+  },
+  {
+    urls: "turn:global.relay.metered.ca:443",
+    username: "c2a40f503e9a16521441559b",
+    credential: "j7yz3AFjfTXKEBHm"
+  },
+  {
+    urls: "turns:global.relay.metered.ca:443?transport=tcp",
+    username: "c2a40f503e9a16521441559b",
+    credential: "j7yz3AFjfTXKEBHm"
+  }
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
                 { urls: 'stun:stun2.l.google.com:19302' },
